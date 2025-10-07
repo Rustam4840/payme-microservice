@@ -5,78 +5,50 @@ import time
 
 app = FastAPI(title="Payme Sandbox Microservice")
 
+# Разрешённый заголовок авторизации (для песочницы можно оставить пустым,
+# тогда любой неправильный/пустой заголовок будет считаться невалидным)
+PAYME_X_AUTH = os.getenv("PAYME_X_AUTH", "").strip()  # например: "Basic AAA...="
+
 def ms_now() -> int:
     return int(time.time() * 1000)
 
-# Если хочешь строго сверять авторизацию — положи сюда значение вида "Basic AAA...."
-PAYME_X_AUTH = os.getenv("PAYME_X_AUTH", "").strip()
+def err(code: int, msg: str, id_: int | None = None):
+    return JSONResponse({"error": {"code": code, "message": msg}, "id": id_})
 
-def _auth_ok(request: Request) -> bool:
-    auth = request.headers.get("authorization")
-    if not auth:
-        return False
-    if not auth.lower().startswith("basic "):
-        return False
-    # Если переменная не задана — пропускаем строгую проверку, иначе сверяем дословно
-    if PAYME_X_AUTH:
-        return auth.strip() == PAYME_X_AUTH
-    return True
-
-# ВАЖНО: правильный путь
 @app.post("/payme/merchant")
-async def payme_entry(request: Request):
-    # 1) Авторизация (для теста invalid-authorization песочница ожидает -32504)
-    if not _auth_ok(request):
-        return JSONResponse({
-            "error": {
-                "code": -32504,
-                "message": {"ru": "Неверная авторизация"}
-            }
-        })
+async def payme_merchant(request: Request):
+    # 1) Проверка авторизации — первый тест песочницы как раз на это
+    auth = request.headers.get("Authorization", "")
+    if not PAYME_X_AUTH or auth != PAYME_X_AUTH:
+        # Код песочницы при неверном Authorization
+        return err(-32504, "Неверная авторизация")
 
-    # 2) JSON
+    # 2) Разбор JSON
     try:
         payload = await request.json()
     except Exception:
-        return JSONResponse({
-            "error": {
-                "code": -32700,
-                "message": {"ru": "Parse error"}
-            }
-        })
+        return err(-32700, "Parse error")
 
     method = payload.get("method")
-    params = payload.get("params", {})   # на будущее
-    req_id = payload.get("id")
+    params = payload.get("params", {})
+    id_    = payload.get("id")
 
-    # Простейшие заглушки под методы песочницы — этого достаточно для прохождения базовых тестов
+    # 3) Минимальные заглушки под основные методы
     if method == "CheckPerformTransaction":
-        return JSONResponse({"result": {"allow": True}, "id": req_id})
+        # В успешном кейсе должен быть result.allow = True/False
+        return JSONResponse({"result": {"allow": True}, "id": id_})
 
-    elif method == "CreateTransaction":
-        return JSONResponse({"result": {
-            "transaction": f"trx-{ms_now()}",
-            "state": 1,
-            "create_time": ms_now()
-        }, "id": req_id})
+    if method == "CreateTransaction":
+        # Возвращаем фиктивный transaction и state=1
+        return JSONResponse({"result": {"transaction": f"tr-{ms_now()}", "state": 1, "id": id_}})
 
-    elif method == "PerformTransaction":
-        return JSONResponse({"result": {
-            "state": 2,
-            "perform_time": ms_now()
-        }, "id": req_id})
+    if method == "PerformTransaction":
+        # Ставим state=2 и время
+        return JSONResponse({"result": {"state": 2, "perform_time": ms_now(), "id": id_}})
 
-    elif method == "CancelTransaction":
-        return JSONResponse({"result": {
-            "state": -1,
-            "cancel_time": ms_now()
-        }, "id": req_id})
+    if method == "CancelTransaction":
+        # Ставим state=-1 и cancel_time
+        return JSONResponse({"result": {"state": -1, "cancel_time": ms_now(), "id": id_}})
 
-    else:
-        return JSONResponse({
-            "error": {
-                "code": -32601,
-                "message": {"ru": "Method not found"}
-            },
-            "id": req_id
-        })
+    # Неизвестный метод
+    return err(-32601, "Method not found", id_)
