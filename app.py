@@ -6,7 +6,7 @@ app = FastAPI(title="Payme Sandbox Microservice")
 
 @app.get("/")
 async def health():
-    return {"ok": True, "service": "payme-microservice"}
+    return {"ok": True}
 
 def ms_now() -> int:
     return int(time.time() * 1000)
