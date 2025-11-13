@@ -1,33 +1,80 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Body
 from fastapi.responses import JSONResponse
 import time
 
 app = FastAPI(title="Payme Sandbox Microservice")
 
-@app.get("/")
-async def health():
-    return {"ok": True}
 
 def ms_now() -> int:
+    """Текущее время в миллисекундах."""
     return int(time.time() * 1000)
 
-@app.post("/payme/merchant")
-async def payme_entry(request: Request):
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"error": {"code": -32700, "message": "Parse error"}})
 
-    method = payload.get("method")
-    _id = payload.get("id")
+@app.post("/")
+async def payme_entry(payload: dict = Body(...)):
+    """
+    Универсальная точка входа для песочницы Payme.
+    Принимает JSON вида:
+    {
+      "id": 1,
+      "method": "CheckPerformTransaction",
+      "params": {...}
+    }
+    """
+    try:
+        method = payload.get("method")
+        params = payload.get("params", {})
+        id_ = payload.get("id")
+    except Exception:
+        # Ошибка парсинга JSON
+        return JSONResponse(
+            {"error": {"code": -32700, "message": "Parse error"}, "id": None}
+        )
+
+    # ===== Эмуляция методов Payme =====
 
     if method == "CheckPerformTransaction":
-        return JSONResponse({"result": {"allow": True}, "id": _id})
+        # Всегда разрешаем платеж
+        return JSONResponse({"result": {"allow": True}, "id": id_})
+
     elif method == "CreateTransaction":
-        return JSONResponse({"result": {"transaction": f"trx-{ms_now()}", "state": 1}, "id": _id})
+        # Создали транзакцию
+        return JSONResponse(
+            {
+                "result": {
+                    "transaction": f"trx-{ms_now()}",
+                    "state": 1,
+                    "create_time": ms_now(),
+                },
+                "id": id_,
+            }
+        )
+
     elif method == "PerformTransaction":
-        return JSONResponse({"result": {"state": 2, "perform_time": ms_now()}, "id": _id})
+        # Провели транзакцию
+        return JSONResponse(
+            {
+                "result": {
+                    "state": 2,
+                    "perform_time": ms_now(),
+                },
+                "id": id_,
+            }
+        )
+
     elif method == "CancelTransaction":
-        return JSONResponse({"result": {"state": -1, "cancel_time": ms_now()}, "id": _id})
-    else:
-        return JSONResponse({"error": {"code": -32601, "message": "Method not found"}, "id": _id})
+        # Отмена
+        return JSONResponse(
+            {
+                "result": {
+                    "state": -1,
+                    "cancel_time": ms_now(),
+                },
+                "id": id_,
+            }
+        )
+
+    # Неизвестный метод
+    return JSONResponse(
+        {"error": {"code": -32601, "message": "Method not found"}, "id": id_}
+    )
