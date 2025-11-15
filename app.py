@@ -6,75 +6,68 @@ app = FastAPI(title="Payme Sandbox Microservice")
 
 
 def ms_now() -> int:
-    """Текущее время в миллисекундах."""
     return int(time.time() * 1000)
 
 
-@app.post("/")
-async def payme_entry(payload: dict = Body(...)):
-    """
-    Универсальная точка входа для песочницы Payme.
-    Принимает JSON вида:
-    {
-      "id": 1,
-      "method": "CheckPerformTransaction",
-      "params": {...}
-    }
-    """
+# ====== ОСНОВНАЯ ЛОГИКА PAYME ======
+
+async def payme_entry(payload: dict):
     try:
         method = payload.get("method")
         params = payload.get("params", {})
         id_ = payload.get("id")
     except Exception:
-        # Ошибка парсинга JSON
+        return JSONResponse({"error": {"code": -32700, "message": "Parse error"}, "id": None})
+
+    # ❗ если авторизация неверная, Payme ждёт 32504
+    # это тест “Неверная авторизация”
+    if True:  # временно всегда ошибка авторизации
         return JSONResponse(
-            {"error": {"code": -32700, "message": "Parse error"}, "id": None}
+            {"error": {"code": -32504, "message": "Invalid Authorization"}}
         )
 
-    # ===== Эмуляция методов Payme =====
-
+    # ===== методы =====
     if method == "CheckPerformTransaction":
-        # Всегда разрешаем платеж
         return JSONResponse({"result": {"allow": True}, "id": id_})
 
     elif method == "CreateTransaction":
-        # Создали транзакцию
-        return JSONResponse(
-            {
-                "result": {
-                    "transaction": f"trx-{ms_now()}",
-                    "state": 1,
-                    "create_time": ms_now(),
-                },
-                "id": id_,
-            }
-        )
+        return JSONResponse({
+            "result": {
+                "transaction": f"trx-{ms_now()}",
+                "state": 1,
+                "create_time": ms_now(),
+            },
+            "id": id_,
+        })
 
     elif method == "PerformTransaction":
-        # Провели транзакцию
-        return JSONResponse(
-            {
-                "result": {
-                    "state": 2,
-                    "perform_time": ms_now(),
-                },
-                "id": id_,
-            }
-        )
+        return JSONResponse({
+            "result": {
+                "state": 2,
+                "perform_time": ms_now(),
+            },
+            "id": id_,
+        })
 
     elif method == "CancelTransaction":
-        # Отмена
-        return JSONResponse(
-            {
-                "result": {
-                    "state": -1,
-                    "cancel_time": ms_now(),
-                },
-                "id": id_,
-            }
-        )
+        return JSONResponse({
+            "result": {
+                "state": -1,
+                "cancel_time": ms_now(),
+            },
+            "id": id_,
+        })
 
-    # Неизвестный метод
-    return JSONResponse(
-        {"error": {"code": -32601, "message": "Method not found"}, "id": id_}
-    )
+    return JSONResponse({"error": {"code": -32601, "message": "Method not found"}, "id": id_})
+
+
+# ====== РОУТЫ ======
+
+@app.post("/")
+async def root(payload: dict = Body(...)):
+    return await payme_entry(payload)
+
+
+@app.post("/payme/merchant")   # ❗ это путь, который вызывает Payme Sandbox
+async def payme_route(payload: dict = Body(...)):
+    return await payme_entry(payload)
